@@ -1,45 +1,39 @@
-from flask import Flask, render_template, request, jsonify
-
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
-
-
-tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
-model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
-
-
+from flask import Flask, render_template, request
+import requests
 
 app = Flask(__name__)
 
+# Your actual SerpAPI key
+SERPAPI_API_KEY = "f5171aeb2ddbe049941ca3378e07f67c63255539a504b42c85d5cdc22ee1f3db"
+
 @app.route("/")
 def index():
-    return render_template('chat.html')
+    return render_template("chat.html")
 
-
-@app.route("/get", methods=["GET", "POST"])
+@app.route("/get", methods=["POST"])
 def chat():
     msg = request.form["msg"]
-    input = msg
-    return get_Chat_response(input)
+    return get_serpapi_result(msg)
 
+def get_serpapi_result(query):
+    url = "https://serpapi.com/search"
+    params = {
+        "q": query,
+        "api_key": SERPAPI_API_KEY,
+        "engine": "google"
+    }
 
-def get_Chat_response(text):
+    response = requests.get(url, params=params)
+    data = response.json()
 
-    # Let's chat for 5 lines
-    for step in range(5):
-        # encode the new user input, add the eos_token and return a tensor in Pytorch
-        new_user_input_ids = tokenizer.encode(str(text) + tokenizer.eos_token, return_tensors='pt')
+    if "organic_results" in data and data["organic_results"]:
+        top_result = data["organic_results"][0]
+        title = top_result.get("title", "No title")
+        link = top_result.get("link", "#")
+        snippet = top_result.get("snippet", "No description")
+        return f"<b>{title}</b><br>{snippet}<br><a href='{link}' target='_blank'>{link}</a>"
+    else:
+        return "No results found."
 
-        # append the new user input tokens to the chat history
-        bot_input_ids = torch.cat([chat_history_ids, new_user_input_ids], dim=-1) if step > 0 else new_user_input_ids
-
-        # generated a response while limiting the total chat history to 1000 tokens, 
-        chat_history_ids = model.generate(bot_input_ids, max_length=1000, pad_token_id=tokenizer.eos_token_id)
-
-        # pretty print last ouput tokens from bot
-        return tokenizer.decode(chat_history_ids[:, bot_input_ids.shape[-1]:][0], skip_special_tokens=True)
-
-
-if __name__ == '__main__':
-    app.run()
+if __name__ == "__main__":
+    app.run(debug=True)
