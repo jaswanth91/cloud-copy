@@ -1,9 +1,14 @@
 from flask import Flask, render_template, request, jsonify
-import openai
-import os
 
-# Set your API key (safely)
-openai.api_key = os.environ.get("sk-proj-awwf2wnLXzs7PVU-fUX02HSHlzgiG8k8-Dh42tkYEiaxhQJylkNIvK-gkVB3X5Er0AgwKV8BBST3BlbkFJV1yNUeEtAEfm5awIl-X6DzVwdxb9XqQHHxxvVIhN9fhhYNRvGkTasciMwS85XE92FAMRZeWjIAY")  # store in environment variable
+
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+
+tokenizer = AutoTokenizer.from_pretrained("microsoft/DialoGPT-small")
+model = AutoModelForCausalLM.from_pretrained("microsoft/DialoGPT-small")
+
+
 
 app = Flask(__name__)
 
@@ -11,28 +16,30 @@ app = Flask(__name__)
 def index():
     return render_template('chat.html')
 
-@app.route("/get", methods=["POST"])
+
+@app.route("/get", methods=["GET", "POST"])
 def chat():
     msg = request.form["msg"]
-    return get_chat_response(msg)
+    input = msg
+    return get_Chat_response(input)
 
-def get_chat_response(user_input):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Or "gpt-4" if you have access
-            messages=[
-                {"role": "system", "content": "You are a helpful and friendly assistant."},
-                {"role": "user", "content": user_input}
-            ],
-            max_tokens=150,
-            temperature=0.7
-        )
 
-        reply = response["choices"][0]["message"]["content"].strip()
-        return reply
+def get_Chat_response(text):
 
-    except Exception as e:
-        return f"Error: {str(e)}"
+    # Let's chat for 5 lines
+    for step in range(5):
+        # encode the new user input, add the eos_token and return a tensor in Pytorch
+        new_user_input_ids = tokenizer.encode(str(text) + tokenizer.eos_token, return_tensors='pt')
 
-if __name__ == "__main__":
-    app.run(debug=True)
+        # append the new user input tokens to the chat history
+        bot_input_ids = torch.cat([chat_history_ids, new_user_input_ids], dim=-1) if step > 0 else new_user_input_ids
+
+        # generated a response while limiting the total chat history to 1000 tokens, 
+        chat_history_ids = model.generate(bot_input_ids, max_length=1000, pad_token_id=tokenizer.eos_token_id)
+
+        # pretty print last ouput tokens from bot
+        return tokenizer.decode(chat_history_ids[:, bot_input_ids.shape[-1]:][0], skip_special_tokens=True)
+
+
+if __name__ == '__main__':
+    app.run()
